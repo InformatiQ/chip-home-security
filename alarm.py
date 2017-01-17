@@ -2,6 +2,8 @@ import os, sys, time, signal
 #import CHIP_IO.GPIO as GPIO
 import threading
 
+import web
+
 class MotionDetect(threading.Thread):
     def __init__(self, pin):
         #GPIO.setup(pin, GPIO.IN)
@@ -11,8 +13,6 @@ class MotionDetect(threading.Thread):
     def run(self):
         print("Detecting motion"),
         while not self._stop.isSet():
-            print "thread stop: %s" %self._stop.isSet()
-            print("."),
             global Detected
             #if GPIO.input("XIO-P0"):
             #    Detected = True
@@ -45,9 +45,22 @@ def signal_handler(signal, frame):
     sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 
+class WebUI(threading.Thread):
+    def __init__(self):
+        super(WebUI, self).__init__()
+
+    def run (self):
+        urls = ('/', 'WebUI')
+        app = web.application(urls, globals())
+        app.run()
+
+    def GET(self):
+        global Detected
+        return "motion detected %s" %Detected
+
 def main():
     try:
-        Detected = False
+        global Detected
         motion = MotionDetect('foo')
         print "start detection"
         motion.start()
@@ -63,6 +76,9 @@ def main():
         print "error -> %s" %str(e)
         motion.stop()
         #GPIO.cleanup()
+        sys.exit()
 
 if __name__ == "__main__":
+    Detected = False
+    WebUI().start()
     main()
