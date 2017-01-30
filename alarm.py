@@ -1,8 +1,18 @@
-import os, sys, time, signal
-#import CHIP_IO.GPIO as GPIO
+import os, sys, time, signal, getopt
 import threading
+import json
 
 import web
+
+#Import plugins
+sys.path.append("./plugins")
+from testnotify import testnotify
+
+def signal_handler(signal, frame):
+    print('You pressed Ctrl+C!')
+    motion.stop()
+    sys.exit(0)
+
 
 class MotionDetect(threading.Thread):
     def __init__(self, pin):
@@ -30,20 +40,6 @@ class MotionDetect(threading.Thread):
         print "terminating thread"
         self._stop.set()
 
-#GPIO.setup("XIO-P1", GPIO.OUT)
-def alert():
-    print "ON"
-    #GPIO.output("XIO-P1", 0)
-
-def reset():
-    print "OFF"
-    #GPIO.output("XIO-P1", 1)
-
-def signal_handler(signal, frame):
-    print('You pressed Ctrl+C!')
-    motion.stop()
-    sys.exit(0)
-signal.signal(signal.SIGINT, signal_handler)
 
 class WebUI(threading.Thread):
     def __init__(self):
@@ -55,30 +51,50 @@ class WebUI(threading.Thread):
         app.run()
 
     def GET(self):
+        global Enabled
         global Detected
-        return "motion detected %s" %Detected
+        web.header('Content-Type', 'application/json')
+        response = {'enabled': Enabled, 'intruder': Detected}
+        return json.dumps(response)
 
-def main():
+    def POST(self):
+        pass
+
+def callback(alerts=[]):
+    if type(alerts) != list:
+        sys.exit()
     try:
         global Detected
-        motion = MotionDetect('foo')
-        print "start detection"
-        motion.start()
+        global Enabled
         while True:
-            print "checking %s" %Detected
-            if Detected:
-                alert()
+            if Detected and Enabled:
+                for a in alerts:
+                    a.alert()
             if os.path.exists('/tmp/reset'):
                 Detected = False
-                reset()
-            time.sleep(2)
+                for a in alerts:
+                    a.reset()
+            time.sleep(1)
     except Exception as e:
         print "error -> %s" %str(e)
         motion.stop()
-        #GPIO.cleanup()
+        for a in alerts:
+            a.cleanup()
         sys.exit()
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGINT, signal_handler)
+    try:
+        opts, args = getopt.getopt(sys.argv[1:],"hw:", ['help', 'web'])
+    except getopt.GetoptError:
+        print 'alarm.py [-h|--help] [-w _PORT_ |--web=_PORT_]'
+        sys.exit(2)
     Detected = False
-    WebUI().start()
-    main()
+    Enabled = True
+    motion = MotionDetect('foo')
+    motion.start()
+    print opts
+    print args
+    #if opts['-w']:
+    #  WebUI().start(opts['-w'])
+    callback([testnotify("alert1", "reset1"), testnotify('alert2', 'reset2')])
